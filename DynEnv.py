@@ -1,81 +1,3 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import numpy as np
-import random
-import pandas as pd
-
-import gymnasium as gym
-from gymnasium import Env
-from gymnasium.spaces import Box
-
-
-from torchdiffeq import odeint, odeint_event
-
-class Boat_Dynamic_System(nn.Module):
-    def __init__(self,cmd,coeffs,dt=1e-2,previous_steps=0):
-        super().__init__()
-        self.cmd = cmd
-        self.dt=dt
-        self.coeffs = coeffs
-        self.previous_steps = previous_steps
-        
-    def Dif_Eq(self,u,v,r,Pf,rud,pro):
-        Values = torch.tensor([1,u,v,r,Pf,u**2,u*v,u*r,u*Pf,v**2,v*r,v*Pf,r**2,r*Pf,Pf**2,
-        pro*1,pro*u,pro*v,pro*r,pro*Pf,pro*u**2,pro*u*v,pro*u*r,
-        pro*u*Pf,pro*v**2,pro*v*r,pro*v*Pf,pro*r**2,pro*r*Pf,pro*Pf**2,
-        rud*1,rud*u,rud*v,rud*r,rud*Pf,rud*u**2,rud*u*v,rud*u*r,rud*u*Pf,
-        rud*v**2,rud*v*r,rud*v*Pf,rud*r**2,rud*r*Pf,rud*Pf**2])
-        Indexes = self.coeffs[0]
-        du = torch.sum(Values*self.coeffs[0])
-        dv = torch.sum(Values*self.coeffs[1])
-        dr = torch.sum(Values*self.coeffs[2])
-        dPf = torch.sum(Values*self.coeffs[3])
-
-        return torch.tensor((du,dv,dr,dPf))
-
-    def forward(self, t, state):
-        u = state[0]
-        v = state[1]
-        r = state[2]
-        Pf = state[3]
-        index = int(torch.round(t/self.dt))
-
-        pro = self.cmd[index,0]
-        rud = self.cmd[index,1]
-        
-        
-        results = self.Dif_Eq(u,v,r,Pf,rud,pro)
-        """
-        du = 0.4000 * Pf - 2 * u + 0.0800 * r * (r + 10 * v)
-        dv = 0.2211 * r - 4.9704 * v - 0.1693 * r * u + 0.0099 * rud * u
-        dr = 0.8876 * v - 5.8681 * r - 0.0789 * r * u + 0.2959 * rud * u
-        dPf = pro - Pf
-        """
-
-        """
-        du = -2.000 * u + 0.400 * Pf + 0.800 * v * r + 0.080 * r**2
-        dv = -4.625 * v + 0.426 * r + -0.159 * u * r
-        dr = 0.996 * v + -5.804 * r + -0.075 * u * r + 0.293*rud*u
-        dPf = -0.998 * Pf + 0.999 * pro
-        """
-        
-        return results
-
-def process_data(datapath, vel_only=False):
-    csv_data = pd.read_csv(datapath, header=None)
-    xtraining = csv_data.to_numpy()
-    tseries = xtraining[:,0]
-    if vel_only:
-        # x and y are sinusoids, hard to model
-        state = xtraining[:, 4:7]
-    else:
-        state = xtraining[:,1:8]
-
-    u = xtraining[:, 8:]
-    dt = tseries[1] - tseries[0]
-    _, num_features = state.shape
-    return xtraining, tseries, state, u, dt, num_features
 
 
 class DynEnv(Env):
@@ -111,7 +33,7 @@ class DynEnv(Env):
                  state_o=None, # Initial state
         The nonlinear format is x_dot = f(x) + u*g(x)
         """
-        self.coeffs_o = coeffs_o
+        self.coeffs_o = coeffs_o[:,:]
         self.n = n
         self.ncmds = ncmds
         self.done_steps = done_steps
@@ -260,8 +182,9 @@ class DynEnv(Env):
         begin = self.initial_step + self.current_step*self.iter_per_steps
         end = begin + self.xhist
         start_c = self.n + self.ncmds
+        coeffs = self.coeffs_o.copy()
         self._state = {"trajectory": self.X[:,begin:end],
                       "cmd": self.u[:,begin:end],
-                      "coefficients": self.coeffs_o}
+                      "coefficients": coeffs}
         self.update_state()
         return self.state
