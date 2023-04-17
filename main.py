@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
-
+from DynEnv import makeCustomEnv #,DynEnv
 from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
 from tianshou.exploration import OUNoise
@@ -43,87 +43,41 @@ def get_args():
     parser.add_argument('--logdir', type=str, default='log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--rew-norm', type=bool, default=False) #Reward Normalization
+    parser.add_argument('--path', type=str,
+                        default='/mundus/vgomesma005/rl_corrector/Xu_Hydrofoil_Useed1236_Train117000s.csv')
+
     parser.add_argument(
         '--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu'
     )
     return parser.parse_args()
 
-def makeCustomEnv():
-    coeffs = np.array([[0,-2,0,0,0.4,0,0,0,0,0,0.8,0,0.08,0,0,
-        0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0],
-                      [0,0,- 4.9704,0.2211,0,0,0,- 0.1693,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,
-        0,0.0099,0,0,0,0,0,0,0,
-        0,0,0,0,0,0],
-                      [0,0,0.8876,- 5.8681,0,0,0,- 0.0789,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,
-        0,0.2959,0,0,0,0,0,0,0,
-        0,0,0,0,0,0],
-                      [0,0,0,0,-1,0,0,0,0,0,0,0,0,0,0,
-        1,0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,
-        0,0,0,0,0,0,0,0,0,
-        0,0,0,0,0,0]])
 
-    n = 4
-    xhist = 45
-    low_state_lim = np.ones((n, xhist))
-    hi_state_lim = np.ones((n, xhist))
-    low_lims = [-5, #u m/s
-                -3, #v m/s
-                -3, #r rad/s
-                -20] #Pf N
-    hi_lims = [ 5, #u m/s
-                3, #v m/s
-                3, #r rad/s
-                30] #Pf N
 
-    n = len(low_lims)
-
-    for state in range(n):
-        low_state_lim[state,:] = low_lims[state]*low_state_lim[state,:]
-        hi_state_lim[state,:] =  hi_lims[state]*hi_state_lim[state,:]
-
-    state_lims = low_state_lim, hi_state_lim
-
-    coeffs_o = coeffs
-
-    xtraining, tseries, X, u, dt, num_features = process_data('/content/drive/MyDrive/Colab Notebooks/Xu_Identification_Useed10_35_1000s.csv', vel_only=True)
-
-    Xu_data = np.ndarray.transpose(np.concatenate((xtraining[:,0:1], X, u),axis=1)) 
-
-    return DynEnv(coeffs_o, #Initial coefficients
-                    state_lims, # Lower and higher limits for the state vars
-                    n, # Number of state variables of the nonlinear system
-                    Xu_data)
 
 def test_sac(args=get_args()):
-    #env = gym.make(args.task)
+    # env = gym.make(args.task)
+
     env = makeCustomEnv()
+
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
     args.max_action = env.action_space.high[0]
+
     # train_envs = gym.make(args.task)
     train_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv for _ in range(args.training_num)]
+        [lambda: makeCustomEnv() for _ in range(args.training_num)]
     )
-    #train_envs = DummyVectorEnv(
-    #    [lambda: gym.make(args.task) for _ in range(args.training_num)]
-    #)
-    # test_envs = gym.make(args.task)
+
     test_envs = DummyVectorEnv(
-        [lambda: gym.make(args.task) for _ in range(args.test_num)]
+        [lambda: makeCustomEnv() for _ in range(args.test_num)]
     )
+
     # seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     train_envs.seed(args.seed)
     test_envs.seed(args.seed)
+
     # model
     # check if hidden size has the size of the hidden layers and the depth
     net = Net(args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device)
