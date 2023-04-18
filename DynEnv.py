@@ -1,5 +1,5 @@
 import numpy as np
-# import pandas as pd
+import pandas as pd
 
 import torch
 
@@ -206,25 +206,28 @@ class DynEnv(Env):
         # Implement viz
         pass
     
-    def reset(self):
+    def reset(self, **kwargs):
         # Reset
         self.current_step = 0
         self.done = False
 
+
         # Simulation initial step
         self.initial_step = np.random.randint(0,
             self.lenX-self.done_steps*self.iter_per_steps-1)
-        
+
+        info = {'index': self.initial_step}
         # Simulation initial state
         begin = self.initial_step + self.current_step*self.iter_per_steps
         end = begin + self.xhist
+
         start_c = self.n + self.ncmds
         coeffs = self.coeffs_o.copy()
         self._state = {"trajectory": self.X[:,begin:end],
                       "cmd": self.u[:,begin:end],
                       "coefficients": coeffs}
         self.update_state()
-        return self.state
+        return self.state, info
 
 
 def makeCustomEnv(data_path):

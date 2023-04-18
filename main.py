@@ -21,7 +21,7 @@ from tianshou.utils.net.continuous import ActorProb, Critic
 
 def get_args():
     parser = argparse.ArgumentParser()
-    #parser.add_argument('--task', type=str, default='MountainCarContinuous-v0')
+    parser.add_argument('--task', type=str, default='Tests')
     parser.add_argument('--seed', type=int, default=1626)
     parser.add_argument('--buffer-size', type=int, default=50000)
     parser.add_argument('--actor-lr', type=float, default=3e-4)
@@ -37,10 +37,10 @@ def get_args():
     parser.add_argument('--step-per-collect', type=int, default=5)
     parser.add_argument('--update-per-step', type=float, default=0.2)
     parser.add_argument('--batch-size', type=int, default=128)
-    parser.add_argument('--hidden-sizes', type=int, nargs='*', default=[128, 128])
+    parser.add_argument('--hidden-sizes', type=str, default='128, 128')
     parser.add_argument('--training-num', type=int, default=5)
-    parser.add_argument('--test-num', type=int, default=100)
-    parser.add_argument('--logdir', type=str, default='log')
+    parser.add_argument('--test-num', type=int, default=5)
+    parser.add_argument('--logdir', type=str, default='/mundus/vgomesma005/rl_corrector/log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--rew-norm', type=bool, default=False) #Reward Normalization
     parser.add_argument('--path', type=str,
@@ -55,9 +55,7 @@ def get_args():
 
 
 def test_sac(args=get_args()):
-    # env = gym.make(args.task)
-
-    env = makeCustomEnv()
+    env = makeCustomEnv(args.path)
 
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
@@ -65,22 +63,24 @@ def test_sac(args=get_args()):
 
     # train_envs = gym.make(args.task)
     train_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv() for _ in range(args.training_num)]
+        [lambda: makeCustomEnv(args.path) for _ in range(args.training_num)]
     )
 
     test_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv() for _ in range(args.test_num)]
+        [lambda: makeCustomEnv(args.path) for _ in range(args.test_num)]
     )
 
     # seed
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    train_envs.seed(args.seed)
-    test_envs.seed(args.seed)
+    #train_envs.seed(args.seed)
+    #test_envs.seed(args.seed)
 
     # model
     # check if hidden size has the size of the hidden layers and the depth
-    net = Net(args.state_shape, hidden_sizes=args.hidden_sizes, device=args.device)
+    hidden_sizes = [int(var) for var in args.hidden_sizes.split(',')]
+    print(f"Hidden Size={hidden_sizes}", flush=True)
+    net = Net(args.state_shape, hidden_sizes=hidden_sizes, device=args.device)
     actor = ActorProb(
         net,
         args.action_shape,
@@ -88,23 +88,26 @@ def test_sac(args=get_args()):
         device=args.device,
         unbounded=True
     ).to(args.device)
+    print(f"Actor Ready", flush=True)
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
     net_c1 = Net(
         args.state_shape,
         args.action_shape,
-        hidden_sizes=args.hidden_sizes,
+        hidden_sizes=hidden_sizes,
         concat=True,
         device=args.device
     )
+    print(f"Critic1 Ready", flush=True)
     critic1 = Critic(net_c1, device=args.device).to(args.device)
     critic1_optim = torch.optim.Adam(critic1.parameters(), lr=args.critic_lr)
     net_c2 = Net(
         args.state_shape,
         args.action_shape,
-        hidden_sizes=args.hidden_sizes,
+        hidden_sizes=hidden_sizes,
         concat=True,
         device=args.device
     )
+    print(f"Critic2 Ready", flush=True)
     critic2 = Critic(net_c2, device=args.device).to(args.device)
     critic2_optim = torch.optim.Adam(critic2.parameters(), lr=args.critic_lr)
 
@@ -113,7 +116,8 @@ def test_sac(args=get_args()):
         log_alpha = torch.zeros(1, requires_grad=True, device=args.device)
         alpha_optim = torch.optim.Adam([log_alpha], lr=args.alpha_lr)
         args.alpha = (target_entropy, log_alpha, alpha_optim)
-
+    print(f"alpha optimizer ready", flush=True)
+    
     policy = SACPolicy(
         actor,
         actor_optim,
@@ -128,6 +132,7 @@ def test_sac(args=get_args()):
         exploration_noise=OUNoise(0.0, args.noise_std),
         action_space=env.action_space
     )
+    print(f"SAC Policy ready", flush=True)
     # collector
     train_collector = Collector(
         policy,
@@ -135,7 +140,9 @@ def test_sac(args=get_args()):
         VectorReplayBuffer(args.buffer_size, len(train_envs)),
         exploration_noise=True
     )
+    print(f"train_collector ready", flush=True)
     test_collector = Collector(policy, test_envs)
+    print(f"test_collector ready", flush=True)
     # train_collector.collect(n_step=args.buffer_size)
     # log
     log_path = os.path.join(args.logdir, args.task, 'sac')
@@ -149,6 +156,7 @@ def test_sac(args=get_args()):
         return mean_rewards >= env.reward_threshold
 
     # trainer
+    print(f"Starting Training", flush=True)
     result = offpolicy_trainer(
         policy,
         train_collector,
