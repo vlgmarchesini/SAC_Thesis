@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from DynEnv import makeCustomEnv #,DynEnv
+from DynEnv import make_custom_env #,DynEnv
 from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
 from tianshou.exploration import OUNoise
@@ -55,7 +55,7 @@ def get_args():
 
 
 def test_sac(args=get_args()):
-    env = makeCustomEnv(args.path)
+    env = make_custom_env(args.path)
 
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
@@ -63,11 +63,11 @@ def test_sac(args=get_args()):
 
     # train_envs = gym.make(args.task)
     train_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv(args.path) for _ in range(args.training_num)]
+        [lambda: make_custom_env(args.path) for _ in range(args.training_num)]
     )
 
     test_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv(args.path) for _ in range(args.test_num)]
+        [lambda: make_custom_env(args.path) for _ in range(args.test_num)]
     )
 
     # seed
@@ -81,6 +81,7 @@ def test_sac(args=get_args()):
     hidden_sizes = [int(var) for var in args.hidden_sizes.split(',')]
     print(f"Hidden Size={hidden_sizes}", flush=True)
     net = Net(args.state_shape, hidden_sizes=hidden_sizes, device=args.device)
+    print()
     actor = ActorProb(
         net,
         args.action_shape,
@@ -171,6 +172,7 @@ def test_sac(args=get_args()):
         save_best_fn=save_best_fn,
         logger=logger
     )
+    print(f"Finished Training", flush=True)
 
     assert stop_fn(result['best_reward'])
     if __name__ == '__main__':
