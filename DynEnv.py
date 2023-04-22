@@ -134,6 +134,7 @@ class DynEnv(Env):
         self.reset()
 
     def update_state(self):
+        
         coef_flat = np.ndarray.flatten(self._state["coefficients"][self.coef_indexes])
         traj_flat = np.ndarray.flatten(self._state["trajectory"])
         estimated_traj_flat = np.ndarray.flatten(self._state["coef_trajec"])

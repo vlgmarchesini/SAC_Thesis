@@ -90,6 +90,7 @@ def test_sac(args=get_args()):
         unbounded=True
     ).to(args.device)
     print(f"Actor Ready", flush=True)
+
     actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
     net_c1 = Net(
         args.state_shape,
