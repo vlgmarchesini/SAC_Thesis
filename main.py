@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
-from DynEnv import makeCustomEnv #,DynEnv
+from DynEnv import make_custom_env #,DynEnv
 from tianshou.data import Collector, VectorReplayBuffer
 from tianshou.env import DummyVectorEnv
 from tianshou.exploration import OUNoise
@@ -36,10 +36,10 @@ def get_args():
     parser.add_argument('--step-per-epoch', type=int, default=12000)
     parser.add_argument('--step-per-collect', type=int, default=5)
     parser.add_argument('--update-per-step', type=float, default=0.2)
-    parser.add_argument('--batch-size', type=int, default=128)
+    parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--hidden-sizes', type=str, default='128, 128')
-    parser.add_argument('--training-num', type=int, default=5)
-    parser.add_argument('--test-num', type=int, default=5)
+    parser.add_argument('--training-num', type=int, default=1)
+    parser.add_argument('--test-num', type=int, default=1)
     parser.add_argument('--logdir', type=str, default='/mundus/vgomesma005/rl_corrector/log')
     parser.add_argument('--render', type=float, default=0.)
     parser.add_argument('--rew-norm', type=bool, default=False) #Reward Normalization
@@ -55,7 +55,7 @@ def get_args():
 
 
 def test_sac(args=get_args()):
-    env = makeCustomEnv(args.path)
+    env = make_custom_env(args.path)
 
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
@@ -63,11 +63,11 @@ def test_sac(args=get_args()):
 
     # train_envs = gym.make(args.task)
     train_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv(args.path) for _ in range(args.training_num)]
+        [lambda: make_custom_env(args.path) for _ in range(args.training_num)]
     )
 
     test_envs = DummyVectorEnv(
-        [lambda: makeCustomEnv(args.path) for _ in range(args.test_num)]
+        [lambda: make_custom_env(args.path) for _ in range(args.test_num)]
     )
 
     # seed
@@ -81,6 +81,7 @@ def test_sac(args=get_args()):
     hidden_sizes = [int(var) for var in args.hidden_sizes.split(',')]
     print(f"Hidden Size={hidden_sizes}", flush=True)
     net = Net(args.state_shape, hidden_sizes=hidden_sizes, device=args.device)
+    print()
     actor = ActorProb(
         net,
         args.action_shape,
@@ -141,7 +142,7 @@ def test_sac(args=get_args()):
         exploration_noise=True
     )
     print(f"train_collector ready", flush=True)
-    test_collector = Collector(policy, test_envs)
+    test_collector = Collector(policy, test_envs, VectorReplayBuffer(args.buffer_size, len(train_envs)))
     print(f"test_collector ready", flush=True)
     # train_collector.collect(n_step=args.buffer_size)
     # log
@@ -153,7 +154,10 @@ def test_sac(args=get_args()):
         torch.save(policy.state_dict(), os.path.join(log_path, 'policy.pth'))
 
     def stop_fn(mean_rewards):
-        return mean_rewards >= env.reward_threshold
+        is_end = mean_rewards >= env.reward_threshold
+        if is_end:
+            print(f"::: CRITERIA REACHED, Mean Rewards:{mean_rewards} ================================================",flush)
+        return is_end
 
     # trainer
     print(f"Starting Training", flush=True)
@@ -171,6 +175,7 @@ def test_sac(args=get_args()):
         save_best_fn=save_best_fn,
         logger=logger
     )
+    print(f"Finished Training", flush=True)
 
     assert stop_fn(result['best_reward'])
     if __name__ == '__main__':
