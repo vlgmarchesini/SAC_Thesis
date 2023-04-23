@@ -5,6 +5,7 @@ import pprint
 import gymnasium as gym
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from DynEnv import make_custom_env #,DynEnv
 from tianshou.data import Collector, VectorReplayBuffer
@@ -56,7 +57,7 @@ def get_args():
 
 def test_sac(args=get_args()):
     env = make_custom_env(args.path)
-
+    activation = nn.Tanh
     args.state_shape = env.observation_space.shape or env.observation_space.n
     args.action_shape = env.action_space.shape or env.action_space.n
     args.max_action = env.action_space.high[0]
@@ -80,7 +81,7 @@ def test_sac(args=get_args()):
     # check if hidden size has the size of the hidden layers and the depth
     hidden_sizes = [int(var) for var in args.hidden_sizes.split(',')]
     print(f"Hidden Size={hidden_sizes}", flush=True)
-    net = Net(args.state_shape, hidden_sizes=hidden_sizes, device=args.device)
+    net = Net(args.state_shape, hidden_sizes=hidden_sizes, activation=activation, device=args.device)
     print()
     actor = ActorProb(
         net,
@@ -96,6 +97,7 @@ def test_sac(args=get_args()):
         args.state_shape,
         args.action_shape,
         hidden_sizes=hidden_sizes,
+        activation=activation,
         concat=True,
         device=args.device
     )
@@ -106,6 +108,7 @@ def test_sac(args=get_args()):
         args.state_shape,
         args.action_shape,
         hidden_sizes=hidden_sizes,
+        activation=activation,
         concat=True,
         device=args.device
     )

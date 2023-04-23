@@ -43,7 +43,7 @@ class DynEnv(Env):
                  done_steps=200, # number of iterations per episode
                  iter_per_steps=10, # number of dynamical system  iterations
                  state_o=None, # Initial state
-                 max_coeff=4
+                 max_coeff=2
                  ):
       
         """
@@ -77,8 +77,10 @@ class DynEnv(Env):
         # Normalization info of the states
         self.X = Xu_data[1:n+1]
         self.u = Xu_data[n:]
-        stats = self.normalization_parameters(self.X,self.u)
-        self.mean_states, self.std_states, self.mean_cmd, self.std_cmd =  stats
+        stats = self.normalization_parameters(self.X, self.u)
+        self.mean_states, self.std_states, self.mean_cmd, self.std_cmd = stats
+        self.mean_cmd = np.expand_dims(self.mean_cmd, axis=1)
+        self.std_cmd = np.expand_dims(self.std_cmd, axis=1)
         self.lenX = len(self.X[0])
 
         n_of_coeffs = 1
@@ -94,18 +96,21 @@ class DynEnv(Env):
         # Actions we can take, down, stay, up
         self.coef_indexes = coeffs_o != 0
         action_shape = coeffs_o[self.coef_indexes].shape
-        maxFactor = 4
-        self.action_space = Box(low=np.ones(action_shape)/maxFactor, high=maxFactor*np.ones(action_shape), dtype=np.float32)
+        self.action_factor = 0.1
 
+        # This is the original version, where the coefficients can be readjusted by a factor multiplying
+        #self.action_space = Box(low=np.ones(action_shape)/maxFactor, high=maxFactor*np.ones(action_shape), dtype=np.float32)
+        self.action_space = Box(low=np.zeros(action_shape) - 0.5, high=np.ones(action_shape) + 0.5,
+                                dtype=np.float64)
 
         #Reward Threshold
         self.reward_threshold = 179.99
 
         # State and cmd ranges
-        low_state_lim_traj = state_lims[0]
-        high_state_lim_traj = state_lims[1]
-        low_cmd_lim_traj = cmd_lims[0]
-        high_cmd_lim_traj = cmd_lims[1]
+        low_state_lim_traj = -2*np.ones(state_lims[0].shape)
+        high_state_lim_traj = 2*np.ones(state_lims[1].shape)
+        low_cmd_lim_traj = -2*np.ones(cmd_lims[0].shape)
+        high_cmd_lim_traj = 2*np.ones(cmd_lims[1].shape)
         
         low_state_lim_coeff = self.coeffs_o[self.coef_indexes]
 
@@ -127,7 +132,8 @@ class DynEnv(Env):
         high_cmd_lim_traj = np.ndarray.flatten(high_cmd_lim_traj)
 
         low_state_lim = np.concatenate((low_state_lim_coeff, low_state_lim_traj, low_state_lim_traj, low_cmd_lim_traj))
-        high_state_lim = np.concatenate((high_state_lim_coeff, high_state_lim_traj, high_state_lim_traj, high_cmd_lim_traj))
+        high_state_lim = np.concatenate((high_state_lim_coeff, high_state_lim_traj, high_state_lim_traj,
+                                         high_cmd_lim_traj))
 
         self.observation_space = Box(low=low_state_lim, high=high_state_lim)
         self.dt = dt
@@ -135,10 +141,11 @@ class DynEnv(Env):
 
     def update_state(self):
         
-        coef_flat = np.ndarray.flatten(self._state["coefficients"][self.coef_indexes])
-        traj_flat = np.ndarray.flatten(self._state["trajectory"])
-        estimated_traj_flat = np.ndarray.flatten(self._state["coef_trajec"])
-        cmd_flat = np.ndarray.flatten(self._state["cmd"])
+        coef_flat = np.ndarray.flatten((self._state["coefficients"][self.coef_indexes]-self.coeffs_o[self.coef_indexes])
+                                       / self.coeffs_o[self.coef_indexes])
+        traj_flat = np.ndarray.flatten((self._state["trajectory"]-self.mean_states)/self.std_states)
+        estimated_traj_flat = np.ndarray.flatten((self._state["coef_trajec"]-self.mean_states)/self.std_states)
+        cmd_flat = np.ndarray.flatten((self._state["cmd"]-self.mean_cmd)/self.std_cmd)
         self.state = np.concatenate((coef_flat, traj_flat, estimated_traj_flat, cmd_flat))
 
     def normalization_parameters(self, state, u):
@@ -166,7 +173,9 @@ class DynEnv(Env):
 
     def step(self, action):
         # Apply action, delta to the coefficients
-        newstate = np.maximum(action*self._state["coefficients"][self.coef_indexes], self.low_state_lim_coeff)
+        action = action*self.action_factor*np.abs(self.coeffs_o[self.coef_indexes])
+        newstate = action + self._state["coefficients"][self.coef_indexes]
+
         #print(f"original state={newstate}")
         newstate = np.maximum(newstate, self.low_state_lim_coeff)
         newstate = np.minimum(newstate, self.high_state_lim_coeff)
